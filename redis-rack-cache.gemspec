@@ -19,8 +19,9 @@ Gem::Specification.new do |s|
   s.executables   = `git ls-files -- bin/*`.split("\n").map{ |f| File.basename(f) }
   s.require_paths = ['lib']
 
-  s.add_dependency 'redis-store', '~> 1.1.0'
-  s.add_dependency 'rack-cache',  '~> 1.2'
+  s.add_dependency 'readthis'
+  s.add_dependency 'rack-cache'
+  s.add_dependency 'hiredis'
 
   s.add_development_dependency 'rake',     '~> 10'
   s.add_development_dependency 'bundler',  '~> 1.3'

@@ -13,28 +13,28 @@ module Rack
         attr_reader :cache
 
         def self.resolve(uri)
-          new ::Redis::Store::Factory.resolve(uri.to_s)
+          new OptionsExtractor.build_options(uri.to_s)
         end
       end
 
       class Redis < RedisBase
-        # The Redis instance used to communicated with the Redis daemon.
+        # The Redis instance used to communicate with the Redis daemon.
         attr_reader :cache
 
-        def initialize(server, options = {})
-          @cache = ::Redis::Store::Factory.create(server)
+        def initialize(options = {})
+          @cache = ::Readthis::Cache.new(options)
         end
 
         def read(key)
-          cache.get(hexdigest(key)) || []
+          cache.read(hexdigest(key)) || []
         end
 
-        def write(key, entries)
-          cache.set(hexdigest(key), entries)
+        def write(key, value, options = {})
+          cache.write(hexdigest(key), value, options)
         end
 
         def purge(key)
-          cache.del(hexdigest(key))
+          cache.delete(hexdigest(key))
           nil
         end
       end

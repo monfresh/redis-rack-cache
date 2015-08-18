@@ -15,36 +15,36 @@ module Rack
         end
 
         def self.resolve(uri)
-          new ::Redis::Store::Factory.resolve(uri.to_s)
+          new OptionsExtractor.build_options(uri.to_s)
         end
       end
 
       class Redis < RedisBase
-        def initialize(server, options = {})
-          @cache = ::Redis::Store::Factory.create(server)
+        def initialize(options = {})
+          @cache = ::Readthis::Cache.new(options)
         end
 
         def exist?(key)
-          cache.exists key
+          cache.exist? key
         end
 
         def read(key)
-          cache.get key
+          cache.read(key)
         end
 
-        def write(body, ttl=0)
+        def write(body, ttl = 0)
           buf = StringIO.new
-          key, size = slurp(body){|part| buf.write(part) }
+          key, size = slurp(body) { |part| buf.write(part) }
 
           if ttl.zero?
-            [key, size] if cache.set(key, buf.string)
+            [key, size] if cache.write(key, buf.string)
           else
-            [key, size] if cache.setex(key, ttl, buf.string)
+            [key, size] if cache.write(key, buf.string, expires_in: ttl)
           end
         end
 
         def purge(key)
-          cache.del key
+          cache.delete(key)
           nil
         end
       end

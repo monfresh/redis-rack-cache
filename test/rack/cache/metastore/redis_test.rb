@@ -2,15 +2,15 @@ require 'test_helper'
 
 describe Rack::Cache::MetaStore::Redis do
   before do
-    @store        = ::Rack::Cache::MetaStore::Redis.resolve   uri('redis://127.0.0.1')
-    @entity_store = ::Rack::Cache::EntityStore::Redis.resolve uri('redis://127.0.0.1:6380')
+    @store        = ::Rack::Cache::MetaStore::Redis.resolve('redis://127.0.0.1')
+    @entity_store = ::Rack::Cache::EntityStore::Redis.resolve('redis://127.0.0.1:6380')
     @request  = mock_request('/', {})
     @response = mock_response(200, {}, ['hello world'])
   end
 
   after do
-    @store.cache.flushall
-    @entity_store.cache.flushall
+    @store.cache.clear
+    @entity_store.cache.clear
   end
 
   it "has the class referenced by homonym constant" do
@@ -22,22 +22,49 @@ describe Rack::Cache::MetaStore::Redis do
   end
 
   it "resolves the connection uri" do
-    cache = Rack::Cache::MetaStore::Redis.resolve(uri("redis://127.0.0.1")).cache
-    cache.must_be_kind_of(::Redis::Store)
-    cache.to_s.must_equal("Redis Client connected to 127.0.0.1:6379 against DB 0")
+    cache = Rack::Cache::MetaStore::Redis.resolve('redis://127.0.0.1').cache
+    cache.must_be_kind_of(::Readthis::Cache)
 
-    cache = Rack::Cache::MetaStore::Redis.resolve(uri("redis://127.0.0.1:6380")).cache
-    cache.to_s.must_equal("Redis Client connected to 127.0.0.1:6380 against DB 0")
+    cache = Rack::Cache::MetaStore::Redis.
+      resolve('redis://127.0.0.1:6380/0/metastore').cache
+    cache.options[:namespace].must_equal('metastore')
+  end
 
-    cache = Rack::Cache::MetaStore::Redis.resolve(uri("redis://127.0.0.1/13")).cache
-    cache.to_s.must_equal("Redis Client connected to 127.0.0.1:6379 against DB 13")
+  it 'sets expires_in to the value of the ENV var when set' do
+    ENV['RRC_EXPIRES_IN'] = '60'
+    cache = Rack::Cache::MetaStore::Redis.
+            resolve('redis://127.0.0.1:6380/0/metastore').cache
 
-    cache = Rack::Cache::MetaStore::Redis.resolve(uri("redis://:secret@127.0.0.1")).cache
-    cache.id.must_equal("redis://127.0.0.1:6379/0")
-    cache.client.password.must_equal('secret')
-    
-    cache = Rack::Cache::MetaStore::Redis.resolve(uri("redis://127.0.0.1:6380/0/metastore")).cache
-    cache.to_s.must_equal("Redis Client connected to 127.0.0.1:6380 against DB 0 with namespace metastore")
+    cache.options[:expires_in].must_equal(60)
+    ENV['RRC_EXPIRES_IN'] = nil
+  end
+
+  it 'defaults expires_in to 300 when ENV var is not set' do
+    cache = Rack::Cache::MetaStore::Redis.
+            resolve('redis://127.0.0.1:6380/0/metastore').cache
+
+    cache.options[:expires_in].must_equal(300)
+  end
+
+  it 'sets driver to the value of the ENV var when set' do
+    ENV['READTHIS_DRIVER'] = 'hiredis'
+    cache = Rack::Cache::MetaStore::Redis.
+            resolve('redis://127.0.0.1:6380/0/metastore').cache
+
+    cache.pool.with do |client|
+      client.client.driver.must_equal(Redis::Connection::Hiredis)
+    end
+
+    ENV['READTHIS_DRIVER'] = nil
+  end
+
+  it 'defaults to ruby driver when ENV var is not set' do
+    cache = Rack::Cache::MetaStore::Redis.
+            resolve('redis://127.0.0.1:6380/0/metastore').cache
+
+    cache.pool.with do |client|
+      client.client.driver.must_equal(Redis::Connection::Ruby)
+    end
   end
 
   # Low-level implementation methods ===========================================
@@ -234,36 +261,33 @@ describe Rack::Cache::MetaStore::Redis do
   end
 
   private
-    define_method :mock_request do |uri, opts|
-      env = Rack::MockRequest.env_for(uri, opts || {})
-      Rack::Cache::Request.new(env)
-    end
 
-    define_method :mock_response do |status, headers, body|
-      headers ||= {}
-      body = Array(body).compact
-      Rack::Cache::Response.new(status, headers, body)
-    end
+  define_method :mock_request do |uri, opts|
+    env = Rack::MockRequest.env_for(uri, opts || {})
+    Rack::Cache::Request.new(env)
+  end
 
-    define_method :slurp do |body|
-      buf = ''
-      body.each { |part| buf << part }
-      buf
-    end
+  define_method :mock_response do |status, headers, body|
+    headers ||= {}
+    body = Array(body).compact
+    Rack::Cache::Response.new(status, headers, body)
+  end
 
-    # Stores an entry for the given request args, returns a url encoded cache key
-    # for the request.
-    define_method :store_simple_entry do |*request_args|
-      path, headers = request_args
-      @request = mock_request(path || '/test', headers || {})
-      @response = mock_response(200, {'Cache-Control' => 'max-age=420'}, ['test'])
-      body = @response.body
-      cache_key = @store.store(@request, @response, @entity_store)
-      @response.body.must_equal(body)
-      cache_key
-    end
+  define_method :slurp do |body|
+    buf = ''
+    body.each { |part| buf << part }
+    buf
+  end
 
-    define_method :uri do |uri|
-      URI.parse uri
-    end
+  # Stores an entry for the given request args, returns a url encoded cache key
+  # for the request.
+  define_method :store_simple_entry do |*request_args|
+    path, headers = request_args
+    @request = mock_request(path || '/test', headers || {})
+    @response = mock_response(200, {'Cache-Control' => 'max-age=420'}, ['test'])
+    body = @response.body
+    cache_key = @store.store(@request, @response, @entity_store)
+    @response.body.must_equal(body)
+    cache_key
+  end
 end

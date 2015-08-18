@@ -8,7 +8,7 @@ end
 
 describe Rack::Cache::EntityStore::Redis do
   before do
-    @store = ::Rack::Cache::EntityStore::Redis.new :host => 'localhost'
+    @store = ::Rack::Cache::EntityStore::Redis.resolve 'redis://localhost:6379/0'
   end
 
   it 'has the class referenced by homonym constant' do
@@ -16,22 +16,49 @@ describe Rack::Cache::EntityStore::Redis do
   end
 
   it 'resolves the connection uri' do
-    cache = ::Rack::Cache::EntityStore::Redis.resolve(uri("redis://127.0.0.1")).cache
-    cache.must_be_kind_of(::Redis)
-    cache.id.must_equal("redis://127.0.0.1:6379/0")
+    cache = ::Rack::Cache::EntityStore::Redis.resolve('redis://127.0.0.1').cache
+    cache.must_be_kind_of(::Readthis::Cache)
 
-    cache = ::Rack::Cache::EntityStore::Redis.resolve(uri("redis://127.0.0.1:6380")).cache
-    cache.id.must_equal("redis://127.0.0.1:6380/0")
+    cache = Rack::Cache::EntityStore::Redis.
+      resolve('redis://127.0.0.1:6380/0/entitystore').cache
+    cache.options[:namespace].must_equal('entitystore')
+  end
 
-    cache = ::Rack::Cache::EntityStore::Redis.resolve(uri("redis://127.0.0.1/13")).cache
-    cache.id.must_equal("redis://127.0.0.1:6379/13")
+  it 'sets expires_in to the value of the ENV var when set' do
+    ENV['RRC_EXPIRES_IN'] = '60'
+    cache = Rack::Cache::EntityStore::Redis
+            .resolve('redis://127.0.0.1:6380/0/entitystore').cache
 
-    cache = ::Rack::Cache::EntityStore::Redis.resolve(uri("redis://:secret@127.0.0.1")).cache
-    cache.id.must_equal("redis://127.0.0.1:6379/0")
-    cache.client.password.must_equal('secret')
-    
-    cache = Rack::Cache::MetaStore::Redis.resolve(uri("redis://127.0.0.1:6380/0/entitystore")).cache
-    cache.to_s.must_equal("Redis Client connected to 127.0.0.1:6380 against DB 0 with namespace entitystore")
+    cache.options[:expires_in].must_equal(60)
+    ENV['RRC_EXPIRES_IN'] = nil
+  end
+
+  it 'defaults expires_in to 300 when ENV var is not set' do
+    cache = Rack::Cache::EntityStore::Redis
+            .resolve('redis://127.0.0.1:6380/0/entitystore').cache
+
+    cache.options[:expires_in].must_equal(300)
+  end
+
+  it 'sets driver to the value of the ENV var when set' do
+    ENV['READTHIS_DRIVER'] = 'hiredis'
+    cache = Rack::Cache::EntityStore::Redis.
+            resolve('redis://127.0.0.1:6380/0/entitystore').cache
+
+    cache.pool.with do |client|
+      client.client.driver.must_equal(Redis::Connection::Hiredis)
+    end
+
+    ENV['READTHIS_DRIVER'] = nil
+  end
+
+  it 'defaults to ruby driver when ENV var is not set' do
+    cache = Rack::Cache::EntityStore::Redis.
+            resolve('redis://127.0.0.1:6380/0/entitystore').cache
+
+    cache.pool.with do |client|
+      client.client.driver.must_equal(Redis::Connection::Ruby)
+    end
   end
 
   it 'responds to all required messages' do
@@ -116,9 +143,4 @@ describe Rack::Cache::EntityStore::Redis do
     @store.purge(key).must_be_nil
     @store.read(key).must_be_nil
   end
-
-  private
-    define_method :uri do |uri|
-      URI.parse uri
-    end
 end

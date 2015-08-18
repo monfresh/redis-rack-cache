@@ -1,5 +1,6 @@
-require 'redis-store'
+require 'readthis'
 require 'rack/cache'
 require 'rack/cache/redis_entitystore'
 require 'rack/cache/redis_metastore'
 require 'redis-rack-cache/version'
+require 'redis-rack-cache/options_extractor'
